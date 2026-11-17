@@ -33,9 +33,11 @@ def carregar_env(caminho):
             continue
         chave, valor = linha.split("=", 1)
         valor = valor.strip()
-        if valor[:1] in "\"'" and valor.endswith(valor[0]) and len(valor) > 1:
-            valor = valor[1:-1]
-        elif " #" in valor:
+        if valor[:1] in "\"'":                # entre aspas: até a aspa que fecha (o resto é comentário)
+            valor = valor[1:].split(valor[0], 1)[0]
+        elif valor.startswith("#"):          # CHAVE=   # comentário -> vazio
+            valor = ""
+        else:
             valor = valor.split(" #", 1)[0].strip()
         valores[chave.strip()] = valor
     return valores

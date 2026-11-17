@@ -102,9 +102,12 @@ class TestCriarCriterio(unittest.TestCase):
 
     def test_env_com_aspas_e_comentario(self):
         caminho = Path(__file__).parent / "_teste.env"
-        caminho.write_text('A="com espaço"\nB=valor  # comentário\n# C=x\n', encoding="utf-8")
+        caminho.write_text('A="com espaço"\nB=valor  # comentário\n# C=x\n'
+                           'D=   # só comentário\nE="a # b"  # comentário depois das aspas\n'
+                           'F=http://x/#ancora\n', encoding="utf-8")
         try:
-            self.assertEqual(cc.carregar_env(caminho), {"A": "com espaço", "B": "valor"})
+            self.assertEqual(cc.carregar_env(caminho), {"A": "com espaço", "B": "valor", "D": "",
+                                                        "E": "a # b", "F": "http://x/#ancora"})
         finally:
             caminho.unlink()
 
