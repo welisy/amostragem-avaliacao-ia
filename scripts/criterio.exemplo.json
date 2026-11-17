@@ -1,0 +1,41 @@
+{
+  "nome": "Atendimento receptivo",
+  "tipo": "calls",
+  "subcriterios": [
+    {
+      "nome": "Abertura",
+      "cor": "orange",
+      "descricao": "Verificar se o agente abriu o atendimento com saudação e identificação antes de avançar. Não exigir a frase literal do script.",
+      "avaliar": ["Saudação adequada ao período", "Nome do agente", "Nome da empresa", "Pergunta aberta sobre o motivo do contato"],
+      "frases_ideais": ["Bom dia, [NOME]. Eu sou [AGENTE], da [EMPRESA]. Como posso ajudar?"]
+    },
+    {
+      "nome": "Segurança das informações",
+      "cor": "black",
+      "descricao": "Verificar se dados pessoais foram tratados só no contexto autorizado. Se o cliente já chega identificado pela URA, não pedir nova validação NÃO é falha. Falha é expor dado sem necessidade.",
+      "avaliar": ["Confirmação do cadastro certo antes de informar dados", "Nenhum dado completo lido em voz alta", "Nenhum pedido de senha"],
+      "frases_ideais": ["Estou com o cadastro de final [FINAL]. É sobre ele que vamos falar?"]
+    },
+    {
+      "nome": "Entendimento da demanda",
+      "cor": "pink",
+      "descricao": "Verificar se o agente entendeu o pedido antes de orientar. Vale demonstrar pelas perguntas feitas ou por uma resposta alinhada ao que foi pedido.",
+      "avaliar": ["Deixou o cliente explicar", "Fez perguntas de esclarecimento quando necessário", "Resumiu a demanda"],
+      "frases_ideais": ["Entendi. Você precisa de [RESUMO], correto?"]
+    },
+    {
+      "nome": "Solução e próximo passo",
+      "cor": "green",
+      "descricao": "Verificar se o cliente saiu com uma solução ou com um próximo passo claro. Quando a resposta depende de outra área, avaliar se o direcionamento foi suficiente. Sem fonte para validar a orientação, marcar como inconclusivo, sem presumir erro.",
+      "avaliar": ["Resposta à dúvida principal", "Próximo passo com prazo ou responsável", "Nenhuma promessa sem base"],
+      "frases_ideais": ["O próximo passo é [AÇÃO] e o prazo é [PRAZO].", "Isso depende de [ÁREA]. Vou explicar como seguir."]
+    },
+    {
+      "nome": "Encerramento",
+      "cor": "blue",
+      "descricao": "Verificar se, antes de encerrar, o agente perguntou se havia outra dúvida, agradeceu e avisou da pesquisa. Se o cliente desligou antes, os itens finais não se aplicam.",
+      "avaliar": ["Pergunta sobre outras dúvidas", "Agradecimento", "Aviso da pesquisa de satisfação"],
+      "frases_ideais": ["Posso ajudar com mais alguma coisa?", "Obrigado pelo contato. Fique na linha para uma pesquisa rápida."]
+    }
+  ]
+}

@@ -1,0 +1,1121 @@
+{
+  "name": "Amostragem diária para avaliação por IA",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 21
+            }
+          ]
+        }
+      },
+      "id": "37995138-e40d-5ed5-a542-998d11a18609",
+      "name": "Todo dia 21h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "5c975bfd-def3-5abf-82c8-dd8e7ce13684",
+      "name": "Reprocessar (manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Configuração =====\n// Tudo que muda de uma operação para outra fica aqui.\nconst config = {\n  telefoniaUrl: 'https://telefonia.exemplo.com',   // relatório de chamadas e link das gravações\n  planilhaId: 'COLE_O_ID_DA_PLANILHA',             // planilha com a aba LOTES\n  fuso: 'America/Sao_Paulo',\n\n  criteriaId: '0',                 // critério na API de avaliação (sai do scripts/criar_criterio.py)\n  filas: {                         // id da fila na telefonia -> nome que aparece no painel\n    '4': { label: 'Atendimento' },\n    '7': { label: 'Retenção' },\n  },\n\n  // ----- amostra\n  npsDetratorAte: 6,               // NPS até aqui = detrator\n  csatDetrator: 'Insatisfeito',    // ...ou esta resposta no CSAT\n  incluirNeutros: false,           // NPS entre npsDetratorAte + 1 e 8\n  minutosDia: 900,                 // teto de áudio por dia, somando as filas (0 = só detratores)\n  semente: 'troque-esta-frase',    // muda o sorteio. Mesma semente e mesmo dia = mesmas ligações\n\n  // ----- elegibilidade e envio\n  duracaoMinimaSeg: 30,\n  ddi: '55',\n  loteMax: 35,\n\n  // Reprocessar um dia: 'aaaa-mm-dd'. Vazio = hoje.\n  dataReprocesso: '',\n\n  // A API de avaliação baixa o áudio pelo link da gravação, que leva este token na URL.\n  // O n8n não deixa ler credencial dentro de expressão, por isso ele fica aqui. Só entra no\n  // corpo da requisição no nó Envia Lote: fica fora da planilha e da saída do Seleciona Amostra.\n  tokenGravacao: 'COLE_O_TOKEN_DE_GRAVACAO',\n};\n\nreturn [{ json: config }];\n"
+      },
+      "id": "13bf5acd-54da-5273-842f-2d8b3f9e95d3",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.planilhaId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LOTES",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "c0584b9c-b93a-5718-b7f4-242f9c5b02c2",
+      "name": "Lê Lotes",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        440,
+        300
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Uma volta do loop por fila. Dia = hoje no fuso da operação, ou o dataReprocesso.\n// Roda às 21h, depois do fim do expediente: a pesquisa entra no relatório minutos após a ligação.\nconst cfg = $('Config').first().json;\nconst hoje = new Intl.DateTimeFormat('en-CA', {\n  timeZone: cfg.fuso, year: 'numeric', month: '2-digit', day: '2-digit',\n}).format(new Date());\nconst dia = String(cfg.dataReprocesso || '').trim() || hoje;\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(dia)) throw new Error(`dataReprocesso inválida: \"${dia}\" (use aaaa-mm-dd)`);\n\nreturn Object.entries(cfg.filas).map(([filaId, f]) => ({ json: { filaId, dia, ...f } }));\n"
+      },
+      "id": "2b58a852-1f78-527d-9916-7005a9e13e40",
+      "name": "Lista Filas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "760d9db8-d5da-5dce-90f2-8c3e57a8b3fc",
+      "name": "Loop Filas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.telefoniaUrl }}/api/v1/reports/calls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "start_date",
+              "value": "={{ DateTime.fromISO($json.dia, { zone: $('Config').first().json.fuso }).startOf('day').toUTC().toISO() }}"
+            },
+            {
+              "name": "end_date",
+              "value": "={{ DateTime.fromISO($json.dia, { zone: $('Config').first().json.fuso }).endOf('day').toUTC().toISO() }}"
+            },
+            {
+              "name": "queue_id",
+              "value": "={{ $json.filaId }}"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "pagination": {
+            "pagination": {
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.pagination?.next_url }}",
+              "limitPagesFetched": true,
+              "maxRequests": 100,
+              "requestInterval": 300
+            }
+          }
+        }
+      },
+      "id": "aa1dfddc-ed0d-51c8-ae15-29d54eb86d49",
+      "name": "Busca Chamadas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1100,
+        400
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Escolhe as ligações do dia desta fila e monta o(s) lote(s) para a API de avaliação.\n//   1. Elegíveis: receptivas, atendidas, acima da duração mínima e com gravação.\n//   2. Detratores (e neutros, se ligado) entram sempre.\n//   3. As demais são sorteadas até o teto de minutos da fila.\nconst cfg  = $('Config').first().json;\nconst fila = $('Loop Filas').first().json;\n\nconst txt = (v) => String(v ?? '').trim();\nconst num = (v) => (/^\\d+$/.test(txt(v)) ? Number(txt(v)) : null);\nconst seg = (x) => Number(x.c.call_duration) || 0;\nconst base = { enviar: false, filaId: fila.filaId, fila: fila.label, dia: fila.dia, criteriaId: txt(cfg.criteriaId) };\n\nif (!/^[1-9]\\d*$/.test(base.criteriaId)) return [{ json: { ...base, motivo: 'criteriaId não configurado' } }];\n\n// Ligações deste dia e desta fila que a API já aceitou (aba LOTES): não vão de novo.\n// Reprocessar o dia manda só o que faltou, sem análise nem cobrança em dobro.\nconst jaEnviadas = new Set($('Lê Lotes').all().map((i) => i.json)\n  .filter((r) => txt(r.fila_id) === txt(fila.filaId) && txt(r.dia) === fila.dia\n    && ['ok', 'divergente'].includes(txt(r.status)))\n  .flatMap((r) => txt(r.call_ids).split(',').filter(Boolean)));\n\nconst chamadas = $input.all().flatMap((i) => (i.json.data && i.json.data.calls) || []);\n\nconst elegiveis = chamadas.filter((c) =>\n  txt(c.queue_id) === txt(fila.filaId)\n  && txt(c.direction) === 'inbound'\n  && txt(c.time_connect)\n  && Number(c.call_duration || 0) > Number(cfg.duracaoMinimaSeg)\n  && txt(c.recording_uuid));\n\n// Na transferência, a mesma gravação aparece em duas pernas. Fica a última: é nela que cai a\n// pesquisa, respondida depois que o último agente sai da linha.\nconst porGravacao = new Map();\n[...elegiveis].sort((a, b) => txt(a.time_connect).localeCompare(txt(b.time_connect)))\n  .forEach((c) => porGravacao.set(txt(c.recording_uuid), c));\nconst ligacoes = [...porGravacao.values()];\n\nconst npsMax = Number(cfg.npsDetratorAte);\nconst classe = (c) => {\n  const n = num(c.nps);\n  if ((n !== null && n <= npsMax) || (txt(cfg.csatDetrator) && txt(c.csat) === txt(cfg.csatDetrator))) return 'detrator';\n  if (cfg.incluirNeutros && n !== null && n > npsMax && n <= 8) return 'neutro';\n  return 'sorteio';\n};\n\n// Telefone com DDI. Um telefone vazio (ou \"0\") faz a API recusar o LOTE INTEIRO,\n// então a ligação sem telefone válido fica de fora e entra na contagem semTelefone.\nconst fone = (c) => {\n  let f = txt(c.caller_number).replace(/\\D/g, '').replace(/^0+/, '');\n  if (f.length === 10 || f.length === 11) f = txt(cfg.ddi) + f;\n  return new RegExp(`^${txt(cfg.ddi)}\\\\d{10,11}$`).test(f) ? f : '';\n};\n\n// Sorteio estável: cada ligação recebe uma nota pseudoaleatória tirada de semente + dia + fila + id.\n// Reprocessar o dia sorteia as mesmas ligações, e uma ligação a mais no relatório não mexe na ordem\n// das outras.\nconst nota = (id) => {\n  let h = 0x811c9dc5;                                        // FNV-1a, 32 bits\n  for (const ch of `${cfg.semente}|${fila.dia}|${fila.filaId}|${id}`) {\n    h ^= ch.codePointAt(0);\n    h = Math.imul(h, 0x01000193);\n  }\n  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b);               // mistura final do murmur3\n  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);\n  return (h ^ (h >>> 16)) >>> 0;\n};\n\nconst candidatas = ligacoes.map((c) => ({ c, classe: classe(c), fone: fone(c) }));\nconst comFone = candidatas.filter((x) => x.fone);\nconst ordemClasse = { detrator: 0, neutro: 1 };\nconst amostra = comFone.filter((x) => x.classe !== 'sorteio')\n  .sort((a, b) => ordemClasse[a.classe] - ordemClasse[b.classe]);\n\n// Os detratores entram mesmo que passem do teto, e contam nele.\nconst tetoSeg = (Math.max(0, Number(cfg.minutosDia) || 0) * 60) / Object.keys(cfg.filas).length;\nlet usadoSeg = amostra.reduce((s, x) => s + seg(x), 0);\nif (tetoSeg > 0) {\n  const resto = comFone.filter((x) => x.classe === 'sorteio')\n    .map((x) => ({ ...x, nota: nota(txt(x.c.call_id)) }))\n    .sort((a, b) => a.nota - b.nota || txt(a.c.call_id).localeCompare(txt(b.c.call_id)));\n  // Para na primeira que não cabe. Pular para a seguinte favoreceria as ligações curtas.\n  for (const x of resto) {\n    if (usadoSeg + seg(x) > tetoSeg) break;\n    amostra.push(x);\n    usadoSeg += seg(x);\n  }\n}\n\nconst novas = amostra.filter((x) => !jaEnviadas.has(txt(x.c.call_id)));\nconst resumo = {\n  elegiveis: ligacoes.length,\n  comPesquisa: ligacoes.filter((c) => txt(c.nps) || txt(c.csat)).length,\n  semTelefone: candidatas.length - comFone.length,\n  jaEnviadas: amostra.length - novas.length,\n  minutosDia: Math.round(usadoSeg / 60),\n};\n\nif (!novas.length) {\n  const motivo = amostra.length ? 'dia já enviado'\n    : tetoSeg > 0 ? 'nenhuma ligação elegível' : 'nenhum detrator no dia';\n  return [{ json: { ...base, ...resumo, motivo } }];\n}\n\nconst LOTE = Math.max(1, Number(cfg.loteMax) || 35);\nconst [ano, mes, d] = fila.dia.split('-');\nconst partes = Math.ceil(novas.length / LOTE);\nconst out = [];\n\nfor (let p = 0; p < partes; p++) {\n  const parte = novas.slice(p * LOTE, (p + 1) * LOTE);\n  const payload = {\n    batch_name: `[${fila.label}] ${tetoSeg > 0 ? 'Amostra' : 'Detratores'} ${d}/${mes}/${ano}`\n      + (partes > 1 ? ` (${p + 1}/${partes})` : ''),\n    criteria_id: base.criteriaId,\n  };\n  // Campos indexados a partir de 0, sem buraco. O link do áudio leva só o marcador do token:\n  // o Envia Lote troca pelo token de verdade na hora do envio.\n  parte.forEach(({ c, classe: cl, fone: f }, i) => {\n    payload[`phone_number_${i}`] = f;\n    payload[`agent_${i}`]        = txt(c.agent_name) || txt(c.agent_login) || 'nao_informado';\n    payload[`campaign_${i}`]     = fila.label;\n    payload[`audioUrls_${i}`]    = `${cfg.telefoniaUrl}/api/v1/recordings/${encodeURIComponent(txt(c.recording_uuid))}?token=__TOKEN_GRAVACAO__`;\n    payload[`metadata_${i}`]     = JSON.stringify({          // chave de volta para a telefonia\n      id_chamada:   txt(c.call_id),\n      protocolo:    txt(c.protocol_number),\n      gravacao:     txt(c.recording_uuid),\n      fila:         fila.label,\n      agente_login: txt(c.agent_login),\n      atendimento:  txt(c.time_connect),\n      duracao_s:    seg({ c }),\n      amostra:      cl,                                      // detrator | neutro | sorteio\n      nps:          txt(c.nps),\n      csat:         txt(c.csat),\n    });\n  });\n  const conta = (cl) => parte.filter((x) => x.classe === cl).length;\n  out.push({ json: {\n    ...base, ...resumo,\n    enviar: true,\n    motivo: 'amostra do dia',\n    itens: parte.length,\n    detratores: conta('detrator'),\n    neutros: conta('neutro'),\n    sorteadas: conta('sorteio'),\n    minutos: Math.round(parte.reduce((s, x) => s + seg(x), 0) / 60),\n    call_ids: parte.map((x) => txt(x.c.call_id)).join(','),\n    payload,\n  } });\n}\nreturn out;\n"
+      },
+      "id": "6d609343-fe3f-5231-8323-253b0cb143a0",
+      "name": "Seleciona Amostra",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "56ac4d6c-43cb-5d1c-9ba7-700410b323a4",
+              "leftValue": "={{ $json.enviar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fdcc0488-9429-5c19-a803-dbc0cf6945c5",
+      "name": "Tem Lote?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://avaliacao.exemplo.com/api/v1/analyze-batch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.parse(JSON.stringify($json.payload).replaceAll('__TOKEN_GRAVACAO__', encodeURIComponent($('Config').first().json.tokenGravacao))) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "733049ad-eef5-50f4-812b-7d1d67ff3475",
+      "name": "Envia Lote",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1760,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.planilhaId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LOTES",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "dia": "={{ $('Seleciona Amostra').item.json.dia }}",
+            "fila_id": "={{ $('Seleciona Amostra').item.json.filaId }}",
+            "fila": "={{ $('Seleciona Amostra').item.json.fila }}",
+            "criteria_id": "={{ $('Seleciona Amostra').item.json.criteriaId }}",
+            "elegiveis": "={{ $('Seleciona Amostra').item.json.elegiveis ?? '' }}",
+            "com_pesquisa": "={{ $('Seleciona Amostra').item.json.comPesquisa ?? '' }}",
+            "itens": "={{ $('Seleciona Amostra').item.json.itens }}",
+            "detratores": "={{ $('Seleciona Amostra').item.json.detratores }}",
+            "neutros": "={{ $('Seleciona Amostra').item.json.neutros }}",
+            "sorteadas": "={{ $('Seleciona Amostra').item.json.sorteadas }}",
+            "minutos": "={{ $('Seleciona Amostra').item.json.minutos }}",
+            "status": "={{ $json.data?.files_count == $('Seleciona Amostra').item.json.itens ? 'ok' : 'divergente' }}",
+            "lote_id": "={{ $json.data?.id }}",
+            "files_count": "={{ $json.data?.files_count }}",
+            "erro": "",
+            "call_ids": "={{ $('Seleciona Amostra').item.json.call_ids }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "dia",
+              "displayName": "dia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fila_id",
+              "displayName": "fila_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fila",
+              "displayName": "fila",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "criteria_id",
+              "displayName": "criteria_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "elegiveis",
+              "displayName": "elegiveis",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "com_pesquisa",
+              "displayName": "com_pesquisa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "itens",
+              "displayName": "itens",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detratores",
+              "displayName": "detratores",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "neutros",
+              "displayName": "neutros",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sorteadas",
+              "displayName": "sorteadas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "minutos",
+              "displayName": "minutos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lote_id",
+              "displayName": "lote_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "files_count",
+              "displayName": "files_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "erro",
+              "displayName": "erro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "call_ids",
+              "displayName": "call_ids",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "46f6198c-2eb1-50c8-8a5d-dbaa13108093",
+      "name": "Registra Lote",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1980,
+        200
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.planilhaId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LOTES",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "dia": "={{ $('Seleciona Amostra').item.json.dia }}",
+            "fila_id": "={{ $('Seleciona Amostra').item.json.filaId }}",
+            "fila": "={{ $('Seleciona Amostra').item.json.fila }}",
+            "criteria_id": "={{ $('Seleciona Amostra').item.json.criteriaId }}",
+            "elegiveis": "={{ $('Seleciona Amostra').item.json.elegiveis ?? '' }}",
+            "com_pesquisa": "={{ $('Seleciona Amostra').item.json.comPesquisa ?? '' }}",
+            "itens": "={{ $('Seleciona Amostra').item.json.itens }}",
+            "detratores": "={{ $('Seleciona Amostra').item.json.detratores }}",
+            "neutros": "={{ $('Seleciona Amostra').item.json.neutros }}",
+            "sorteadas": "={{ $('Seleciona Amostra').item.json.sorteadas }}",
+            "minutos": "={{ $('Seleciona Amostra').item.json.minutos }}",
+            "status": "erro",
+            "lote_id": "",
+            "files_count": "",
+            "erro": "={{ String($json.error?.message || $json.message || JSON.stringify($json)).substring(0, 500) }}",
+            "call_ids": "={{ $('Seleciona Amostra').item.json.call_ids }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "dia",
+              "displayName": "dia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fila_id",
+              "displayName": "fila_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fila",
+              "displayName": "fila",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "criteria_id",
+              "displayName": "criteria_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "elegiveis",
+              "displayName": "elegiveis",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "com_pesquisa",
+              "displayName": "com_pesquisa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "itens",
+              "displayName": "itens",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detratores",
+              "displayName": "detratores",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "neutros",
+              "displayName": "neutros",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sorteadas",
+              "displayName": "sorteadas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "minutos",
+              "displayName": "minutos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lote_id",
+              "displayName": "lote_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "files_count",
+              "displayName": "files_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "erro",
+              "displayName": "erro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "call_ids",
+              "displayName": "call_ids",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "65bff98a-5bb2-5207-8948-eab65f4fe4cf",
+      "name": "Registra Falha",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1980,
+        400
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.planilhaId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "LOTES",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "dia": "={{ $('Seleciona Amostra').item.json.dia }}",
+            "fila_id": "={{ $('Seleciona Amostra').item.json.filaId }}",
+            "fila": "={{ $('Seleciona Amostra').item.json.fila }}",
+            "criteria_id": "={{ $('Seleciona Amostra').item.json.criteriaId }}",
+            "elegiveis": "={{ $('Seleciona Amostra').item.json.elegiveis ?? '' }}",
+            "com_pesquisa": "={{ $('Seleciona Amostra').item.json.comPesquisa ?? '' }}",
+            "itens": "0",
+            "detratores": "0",
+            "neutros": "0",
+            "sorteadas": "0",
+            "minutos": "0",
+            "status": "={{ $json.motivo }}",
+            "lote_id": "",
+            "files_count": "",
+            "erro": "",
+            "call_ids": ""
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "dia",
+              "displayName": "dia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fila_id",
+              "displayName": "fila_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fila",
+              "displayName": "fila",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "criteria_id",
+              "displayName": "criteria_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "elegiveis",
+              "displayName": "elegiveis",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "com_pesquisa",
+              "displayName": "com_pesquisa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "itens",
+              "displayName": "itens",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detratores",
+              "displayName": "detratores",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "neutros",
+              "displayName": "neutros",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sorteadas",
+              "displayName": "sorteadas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "minutos",
+              "displayName": "minutos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lote_id",
+              "displayName": "lote_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "files_count",
+              "displayName": "files_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "erro",
+              "displayName": "erro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "call_ids",
+              "displayName": "call_ids",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c8732692-d669-5de2-afab-13ad46052a38",
+      "name": "Registra Dia sem Envio",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1760,
+        600
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {},
+      "id": "4da2c136-eb84-55f8-b56f-e2677634778c",
+      "name": "Fim",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Amostragem diária para avaliação por IA\nTodo dia às **21h**, para cada fila do **Config**: busca as ligações do dia no relatório da telefonia, escolhe a amostra e envia em lote para a API de avaliação, com o critério configurado.\n\n**Amostra:** todos os **detratores** (NPS ≤ 6 ou CSAT \"Insatisfeito\"). Depois, ligações **sorteadas** até `minutosDia` (somando as filas). A API cobra por minuto de áudio.\n\n**Reprocessar um dia:** preencher `dataReprocesso` (aaaa-mm-dd) no Config e rodar o **Reprocessar (manual)**. O que a API já aceitou é pulado.\n\nTudo fica registrado na aba `LOTES`: lote, contagens, minutos, status e os ids das ligações.",
+        "height": 320,
+        "width": 660
+      },
+      "id": "872c3c2d-df2b-5811-b5ce-cfac24e36bb7",
+      "name": "Nota - Visão geral",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Por que lote diário e não webhook\nA pesquisa (NPS/CSAT) é respondida **depois** que o agente sai da linha, então não vem no evento de fim de chamada. Rodando depois do expediente, o relatório do dia já traz a pesquisa, a gravação e o protocolo.\n\nO relatório pagina de 50 em 50: o *Busca Chamadas* segue as páginas até `next_url` vir vazio.",
+        "height": 220,
+        "width": 480,
+        "color": 5
+      },
+      "id": "8e9efaa4-4eb5-5152-882f-f3e3dd12f427",
+      "name": "Nota - Por que diário",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        660,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Armadilhas do envio\n• **Telefone vazio ou \"0\" derruba o lote inteiro** na API. O *Seleciona Amostra* deixa a ligação de fora e conta em `semTelefone`.\n• **Campos indexados sem buraco:** `phone_number_0`, `agent_0`... A numeração é refeita depois de filtrar.\n• **Envia Lote sem retry.** Um POST repetido depois de timeout pode duplicar a análise, e a cobrança. Falha vira linha `erro` na aba; antes de reprocessar, confira no painel se o lote não entrou.\n• **Status `divergente`:** a API aceitou menos arquivos do que o lote tinha.",
+        "height": 300,
+        "width": 560,
+        "color": 3
+      },
+      "id": "faed0dd5-7236-598a-9ae3-0b50ee5c28b4",
+      "name": "Nota - Envio",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        -300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Todo dia 21h": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reprocessar (manual)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Lê Lotes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lê Lotes": {
+      "main": [
+        [
+          {
+            "node": "Lista Filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lista Filas": {
+      "main": [
+        [
+          {
+            "node": "Loop Filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Filas": {
+      "main": [
+        [
+          {
+            "node": "Fim",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Busca Chamadas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Chamadas": {
+      "main": [
+        [
+          {
+            "node": "Seleciona Amostra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seleciona Amostra": {
+      "main": [
+        [
+          {
+            "node": "Tem Lote?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Lote?": {
+      "main": [
+        [
+          {
+            "node": "Envia Lote",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registra Dia sem Envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envia Lote": {
+      "main": [
+        [
+          {
+            "node": "Registra Lote",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registra Falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registra Lote": {
+      "main": [
+        [
+          {
+            "node": "Loop Filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registra Falha": {
+      "main": [
+        [
+          {
+            "node": "Loop Filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registra Dia sem Envio": {
+      "main": [
+        [
+          {
+            "node": "Loop Filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataSuccessExecution": "none"
+  },
+  "tags": []
+}

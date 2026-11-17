@@ -1,0 +1,14 @@
+{
+  "name": "amostragem-avaliacao-ia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Workflow n8n que escolhe as ligações do dia para avaliação de qualidade por IA: detratores sempre e sorteio estável até um teto de minutos.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test",
+    "simular": "node sandbox/simular.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

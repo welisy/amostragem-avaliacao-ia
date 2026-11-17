@@ -1,0 +1,17 @@
+{
+  "data": {
+    "calls": [
+      { "call_id": "510001", "queue_id": 4, "direction": "inbound", "time_connect": "2026-10-01 09:12:04", "call_duration": 412, "recording_uuid": "0b6c1f52-1a3e-4c7d-9e21-5f8a7b6c4d01", "caller_number": "11987650001", "agent_name": "Ana Souza", "agent_login": "ana", "protocol_number": "20261001000001", "nps": "3", "csat": "Insatisfeito" },
+      { "call_id": "510002", "queue_id": 4, "direction": "inbound", "time_connect": "2026-10-01 09:40:31", "call_duration": 655, "recording_uuid": "0b6c1f52-1a3e-4c7d-9e21-5f8a7b6c4d02", "caller_number": "(21) 98765-0002", "agent_name": "Bruno Lima", "agent_login": "bruno", "protocol_number": "20261001000002", "nps": "", "csat": "Insatisfeito" },
+      { "call_id": "510003", "queue_id": 4, "direction": "inbound", "time_connect": "2026-10-01 10:05:10", "call_duration": 280, "recording_uuid": "0b6c1f52-1a3e-4c7d-9e21-5f8a7b6c4d03", "caller_number": "11987650003", "agent_name": "Carla Dias", "agent_login": "carla", "protocol_number": "20261001000003", "nps": "10", "csat": "Muito satisfeito" },
+      { "call_id": "510004", "queue_id": 4, "direction": "inbound", "time_connect": "2026-10-01 10:30:00", "call_duration": 190, "recording_uuid": "0b6c1f52-1a3e-4c7d-9e21-5f8a7b6c4d04", "caller_number": "1133330004", "agent_name": "Ana Souza", "agent_login": "ana", "protocol_number": "20261001000004", "nps": "", "csat": "" },
+      { "call_id": "510005", "queue_id": 4, "direction": "inbound", "time_connect": "2026-10-01 11:02:00", "call_duration": 840, "recording_uuid": "0b6c1f52-1a3e-4c7d-9e21-5f8a7b6c4d05", "caller_number": "11987650005", "agent_name": "Diego Nunes", "agent_login": "diego", "protocol_number": "20261001000005", "nps": "", "csat": "" },
+      { "call_id": "510006", "queue_id": 4, "direction": "inbound", "time_connect": "2026-10-01 11:02:41", "call_duration": 840, "recording_uuid": "0b6c1f52-1a3e-4c7d-9e21-5f8a7b6c4d05", "caller_number": "11987650005", "agent_name": "Elisa Gomes", "agent_login": "elisa", "protocol_number": "20261001000005", "nps": "9", "csat": "Satisfeito" },
+      { "call_id": "510007", "queue_id": 4, "direction": "outbound", "time_connect": "2026-10-01 13:15:00", "call_duration": 300, "recording_uuid": "0b6c1f52-1a3e-4c7d-9e21-5f8a7b6c4d07", "caller_number": "11987650007", "agent_name": "Fábio Reis", "agent_login": "fabio", "protocol_number": "20261001000007", "nps": "", "csat": "" },
+      { "call_id": "510008", "queue_id": 4, "direction": "inbound", "time_connect": null, "call_duration": 95, "recording_uuid": "", "caller_number": "11987650008", "agent_name": "", "agent_login": "", "protocol_number": "20261001000008", "nps": "", "csat": "" },
+      { "call_id": "510009", "queue_id": 4, "direction": "inbound", "time_connect": "2026-10-01 14:20:00", "call_duration": 22, "recording_uuid": "0b6c1f52-1a3e-4c7d-9e21-5f8a7b6c4d09", "caller_number": "11987650009", "agent_name": "Ana Souza", "agent_login": "ana", "protocol_number": "20261001000009", "nps": "", "csat": "" },
+      { "call_id": "510010", "queue_id": 4, "direction": "inbound", "time_connect": "2026-10-01 15:48:00", "call_duration": 365, "recording_uuid": "0b6c1f52-1a3e-4c7d-9e21-5f8a7b6c4d10", "caller_number": "0", "agent_name": "Bruno Lima", "agent_login": "bruno", "protocol_number": "20261001000010", "nps": "2", "csat": "" }
+    ]
+  },
+  "pagination": { "page": 1, "next_url": null }
+}
